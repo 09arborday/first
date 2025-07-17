@@ -3,55 +3,68 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 
-# -------------------- 기본 설정 --------------------
-st.set_page_config(page_title="2025년 5월 인구 지도 시각화", layout="wide")
-st.title("2025년 5월 기준 인구 상위 5개 행정구역 지도 표시")
+# Streamlit 페이지 설정
+st.set_page_config(page_title="상위 5개 행정구역 인구 지도", page_icon="🗺️", layout="wide")
 
-# -------------------- 데이터 불러오기 및 전처리 --------------------
-file_path = "202505_202505_연령별인구현황_월간.csv"
-df = pd.read_csv(file_path, encoding="euc-kr")
+st.title("🗺️ 상위 5개 행정구역 인구수 지도 시각화")
 
-# 필요한 열 추출
-population_cols = [col for col in df.columns if col.startswith("2025년05월_계_")]
-age_cols = [col for col in population_cols if "총인구수" not in col]
-age_mapping = {col: col.replace("2025년05월_계_", "") for col in age_cols}
-df = df.rename(columns=age_mapping)
-df["총인구수"] = df["2025년05월_계_총인구수"].str.replace(",", "").astype(int)
-df_filtered = df[df["행정구역"].str.count(r"\(") == 1]
-top5_df = df_filtered.sort_values("총인구수", ascending=False).head(5).copy()
+# CSV 파일 읽기
+df = pd.read_csv("202505_202505_연령별인구현황_월간.csv", encoding='euc-kr')
 
-# -------------------- 위도/경도 수동 설정 --------------------
-# 각 행정구역에 대응하는 위도/경도 (샘플 - 필요시 추가 보완 가능)
-location_map = {
-    "경기도 수원시 (4111000000)": [37.2636, 127.0286],
-    "부산광역시 해운대구 (2647000000)": [35.1631, 129.1635],
-    "서울특별시 송파구 (1171000000)": [37.5145, 127.1056],
-    "서울특별시 강서구 (1150000000)": [37.5509, 126.8495],
-    "서울특별시 강남구 (1168000000)": [37.5172, 127.0473],
+# 행정구역 열에서 괄호 안 숫자 제거
+df['행정구역'] = df['행정구역'].str.replace(r"\s*\(\d+\)", "", regex=True).str.strip()
+
+# 인구수 전처리
+df['총인구수'] = df['2025년05월_계_총인구수'].str.replace(',', '').astype(int)
+
+# 연령별 컬럼 전처리
+age_columns = [col for col in df.columns if col.startswith('2025년05월_계_') and ('세' in col or '100세 이상' in col)]
+new_columns = []
+for col in age_columns:
+    if '100세 이상' in col:
+        new_columns.append('100세 이상')
+    else:
+        new_columns.append(col.replace('2025년05월_계_', '').replace('세', '') + '세')
+
+df_age = df[['행정구역', '총인구수'] + age_columns].copy()
+df_age.columns = ['행정구역', '총인구수'] + new_columns
+
+# 상위 5개 행정구역 추출
+top5_df = df_age.sort_values(by='총인구수', ascending=False).head(5)
+
+# 원 표시할 좌표 (행정구역명 수정 후 사용)
+region_coords = {
+    "경기도": [37.4138, 127.5183],
+    "서울특별시": [37.5665, 126.9780],
+    "부산광역시": [35.1796, 129.0756],
+    "경상남도": [35.4606, 128.2132],
+    "인천광역시": [37.4563, 126.7052]
 }
 
-# -------------------- 지도 생성 --------------------
-m = folium.Map(location=[36.5, 127.8], zoom_start=7)
+# 지도 생성
+m = folium.Map(location=[36.5, 127.5], zoom_start=7)
 
+# 크고 선명한 원(circle) 추가
 for _, row in top5_df.iterrows():
-    name = row["행정구역"]
-    pop = row["총인구수"]
-    coords = location_map.get(name)
-
+    region = row['행정구역']
+    pop = row['총인구수']
+    coords = region_coords.get(region)
     if coords:
-        folium.CircleMarker(
+        folium.Circle(
             location=coords,
-            radius=pop / 1000000,  # 인구 수에 따라 크기 조절
-            color='crimson',
+            radius=int(pop) / 300,   # 원 크기 조정 (필요 시 /15 ~ /30 사이에서 조절)
+            color='Deeppink',
             fill=True,
-            fill_color='crimson',
-            fill_opacity=0.4,
-            popup=f"{name}<br>총인구수: {pop:,}명"
+            fill_color='Lightpink',
+            fill_opacity=0.6,       # 불투명하게 표시
+            popup=f"{region} : {pop:,}명",
+            tooltip=region
         ).add_to(m)
 
-# -------------------- Streamlit UI --------------------
-st.subheader("📍 인구 상위 5개 지역 지도 시각화")
-st_folium(m, width=1000, height=600)
+# 지도 출력
+st.subheader("🗺️ 지도에서 상위 5개 행정구역 인구수 확인")
+st_folium(m, width=900, height=600)
 
-st.subheader("📊 인구 데이터")
-st.dataframe(top5_df[["행정구역", "총인구수"]])
+# 원본 데이터도 출력
+st.subheader("📊 원본 데이터 (상위 5개 행정구역)")
+st.dataframe(top5_df)
